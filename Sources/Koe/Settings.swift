@@ -10,6 +10,7 @@ enum SettingsKey {
     static let deepseekModel  = "koe.deepseekModel"
     static let deepseekBaseURL = "koe.deepseekBaseURL"
     static let whisperModel   = "koe.whisperModel"
+    static let whisperFlashAttn = "koe.whisperFlashAttn" // Flash Attention（GPU 推論の高速化）
     static let hotkey         = "koe.hotkey"
     static let restoreClipboard = "koe.restoreClipboard"
     static let language       = "koe.language"
@@ -50,6 +51,7 @@ enum Settings {
             SettingsKey.deepseekModel: "deepseek-chat",
             SettingsKey.deepseekBaseURL: "https://api.deepseek.com",
             SettingsKey.whisperModel: WhisperModelKind.largeV3Turbo.rawValue,
+            SettingsKey.whisperFlashAttn: true,   // 既定で有効（Metal 上での推論を高速化）
             SettingsKey.hotkey: HotkeyKind.rightOption.rawValue,
             SettingsKey.restoreClipboard: true,
             SettingsKey.language: "ja",
@@ -105,6 +107,15 @@ enum Settings {
 
     static var whisperModel: WhisperModelKind {
         WhisperModelKind(rawValue: d.string(forKey: SettingsKey.whisperModel) ?? "") ?? .largeV3Turbo
+    }
+
+    // Flash Attention。Metal 上で attention 計算を高速化・省メモリ化する。
+    // 環境変数 KOE_FLASH_ATTN（1/0, true/false）で上書きでき、計測時の on/off 比較に使える。
+    static var whisperFlashAttn: Bool {
+        if let env = ProcessInfo.processInfo.environment["KOE_FLASH_ATTN"] {
+            return env == "1" || env.lowercased() == "true"
+        }
+        return d.bool(forKey: SettingsKey.whisperFlashAttn)
     }
 
     static var initialPrompt: String {

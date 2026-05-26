@@ -5,6 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject var controller: AppController
 
     @AppStorage(SettingsKey.whisperModel) private var whisperModel = WhisperModelKind.small.rawValue
+    @AppStorage(SettingsKey.whisperFlashAttn) private var whisperFlashAttn = true
     @AppStorage(SettingsKey.refineEnabled) private var refineEnabled = true
     @AppStorage(SettingsKey.refineProvider) private var refineProvider = RefineProvider.ollama.rawValue
     @AppStorage(SettingsKey.refineMode) private var refineMode = RefineMode.strict.rawValue
@@ -55,6 +56,10 @@ struct SettingsView: View {
                 }
             }
             Text("モデルの変更はアプリの再起動後に反映されます。").font(.caption).foregroundStyle(.secondary)
+
+            Toggle("Flash Attention（GPU 推論を高速化）", isOn: $whisperFlashAttn)
+            Text("Apple Silicon で文字起こしを高速化します。M2 など GPU が控えめな機種で特に有効。変更は再起動後に反映されます。")
+                .font(.caption).foregroundStyle(.secondary)
 
             Divider()
 

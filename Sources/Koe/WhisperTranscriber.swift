@@ -20,10 +20,10 @@ actor WhisperTranscriber {
         }
     }
 
-    init(modelPath: String) throws {
+    init(modelPath: String, flashAttn: Bool = true) throws {
         var cparams = whisper_context_default_params()
         cparams.use_gpu = true          // Metal を使う
-        cparams.flash_attn = false
+        cparams.flash_attn = flashAttn  // Flash Attention（GPU 推論の高速化・省メモリ）
         guard let c = whisper_init_from_file_with_params(modelPath, cparams) else {
             throw TranscribeError.initFailed(modelPath)
         }
@@ -36,6 +36,8 @@ actor WhisperTranscriber {
 
     func transcribe(samples: [Float], language: String = "ja", initialPrompt: String = "") throws -> String {
         guard !samples.isEmpty else { return "" }
+
+        whisper_reset_timings(ctx)   // 直前の計測値を消し、この発話の encode/decode 内訳だけを得る
 
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
         params.print_realtime = false
@@ -67,6 +69,9 @@ actor WhisperTranscriber {
             }
         }
         guard status == 0 else { throw TranscribeError.inferenceFailed(status) }
+
+        // encode/decode/sample の内訳を標準エラーへ出力（M2/M4 のボトルネック比較用）。
+        whisper_print_timings(ctx)
 
         let n = whisper_full_n_segments(ctx)
         var text = ""

@@ -156,9 +156,11 @@ final class AppController: ObservableObject {
             return nil
         }
         do {
-            let t = try WhisperTranscriber(modelPath: ModelDownloader.localURL(for: model).path)
+            let flash = Settings.whisperFlashAttn
+            let t = try WhisperTranscriber(modelPath: ModelDownloader.localURL(for: model).path,
+                                           flashAttn: flash)
             transcriber = t
-            log("モデル読み込み完了: \(model.rawValue)")
+            log("モデル読み込み完了: \(model.rawValue)（flashAttn=\(flash)）")
             return t
         } catch {
             log("モデル読み込み失敗: \(error)")
@@ -239,9 +241,16 @@ final class AppController: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
+                let inferStart = Date()
                 let raw = try await t.transcribe(samples: samples,
                                                  language: Settings.language,
                                                  initialPrompt: Settings.initialPrompt)
+                let inferSec = Date().timeIntervalSince(inferStart)
+                // RT比（推論秒 ÷ 音声秒）。1.0 未満なら実時間より速い。M2/M4 の比較指標。
+                let rtRatio = seconds > 0 ? inferSec / seconds : 0
+                log(String(format: "推論時間: %.2f 秒（音声 %.1f 秒, RT比 %.2fx, model=%@, flashAttn=%@）",
+                           inferSec, seconds, rtRatio, self.model.rawValue,
+                           Settings.whisperFlashAttn ? "on" : "off"))
                 log("文字起こし: \(raw)")
                 guard !raw.isEmpty else { self.transition(.idle); return }
 
@@ -259,6 +268,9 @@ final class AppController: ObservableObject {
 
                 SessionLogger.record([
                     "durationSec": (seconds * 10).rounded() / 10,
+                    "inferSec": (inferSec * 1000).rounded() / 1000,
+                    "rtRatio": (rtRatio * 1000).rounded() / 1000,
+                    "flashAttn": Settings.whisperFlashAttn,
                     "samples": samples.count,
                     "peak": (Double(peak) * 1000).rounded() / 1000,
                     "rms": (Double(rms) * 1000).rounded() / 1000,
