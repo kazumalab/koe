@@ -20,9 +20,13 @@ struct RefineOutcome: Sendable {
 // - strict:  同音異義語の漢字取り違えだけ直す。読みガードで「読みが変わる修正」を破棄（最も安全）。
 // - natural: 上記に加え、カタカナ認識された英語の固有名詞・製品名・技術略語を英字表記へ直す
 //            （例: ディープシーク→DeepSeek）。読みが変わるため読みガードは使わず、長さガードのみで守る。
+// - custom:  ユーザーが書いたシステムプロンプトをそのまま LLM に渡す自由モード。
+//            few-shot・語彙ヒント・読みガード・長さガードを全て外す。任意の変換を許可するため、
+//            「入力テキストをそのまま返してください。」のように書けば校正なし運用にもできる。
 enum RefineMode: String {
     case strict
     case natural
+    case custom
 }
 
 // 整形（漢字校正）の安全クリティカルな共通部。
@@ -87,11 +91,32 @@ enum RefineCore {
         .init(role: "assistant", content: "意思決定のプロセスを見直す"),
     ]
 
+    // custom モードでシステムプロンプトが空のときに使うフォールバック。
+    // 安全側として「そのまま返す」を既定にし、何も挿入しないという最悪ケースを避ける。
+    private static let customFallback = "入力テキストをそのまま返してください。"
+
     // モデルへ渡すメッセージ列を組み立てる。
     // - userText:   整形対象（前後空白を除去済みを渡す）
     // - domainHint: 分野・専門用語の文脈ヒント（Whisper の語彙ヒントを流用）。空なら付けない。
+    //               custom モードでは無視する（プロンプトを汚さないため）。
     // - mode:       整形の強さ。
-    static func buildMessages(userText: String, domainHint: String, mode: RefineMode) -> [RefineMessage] {
+    // - customSystemPrompt: custom モード時にユーザーがそのまま使うシステムプロンプト。
+    //               他モードでは無視される。デフォルト引数で既存呼び出しと後方互換。
+    static func buildMessages(
+        userText: String,
+        domainHint: String,
+        mode: RefineMode,
+        customSystemPrompt: String = ""
+    ) -> [RefineMessage] {
+        // custom モードは「ユーザーが書いた system だけを渡す」最短経路。few-shot も domainHint も付けない。
+        if mode == .custom {
+            let trimmedPrompt = customSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            let system = trimmedPrompt.isEmpty ? customFallback : trimmedPrompt
+            return [
+                .init(role: "system", content: system),
+                .init(role: "user", content: userText)
+            ]
+        }
         var system = (mode == .natural) ? naturalInstruction : strictInstruction
         let hint = domainHint.trimmingCharacters(in: .whitespacesAndNewlines)
         if !hint.isEmpty {
@@ -119,8 +144,10 @@ enum RefineCore {
         if refined == trimmed {
             return RefineOutcome(finalText: trimmed, proposed: refined, accepted: false, reason: "no_change")
         }
-        // 安全ガード1（両モード共通）: 文字数が大きく変わる結果（指示への返答・丸ごと書き換え）は破棄。
-        if refined.count > Int(Double(trimmed.count) * 1.4) + 4 || refined.count * 2 < trimmed.count {
+        // 安全ガード1（strict/natural 共通）: 文字数が大きく変わる結果（指示への返答・丸ごと書き換え）は破棄。
+        // custom はユーザー自身が変換方針を書く自由モードなので長さガードは適用しない。
+        if mode != .custom,
+           refined.count > Int(Double(trimmed.count) * 1.4) + 4 || refined.count * 2 < trimmed.count {
             log("補正結果が原文と大きく異なるため破棄（生テキストを使用）")
             return RefineOutcome(finalText: trimmed, proposed: refined, accepted: false, reason: "length_guard")
         }

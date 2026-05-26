@@ -268,6 +268,7 @@ final class AppController: ObservableObject {
                     "refineMode": Settings.refineMode.rawValue,
                     "ollamaModel": Settings.ollamaModel,
                     "deepseekModel": Settings.deepseekModel,
+                    "geminiModel": Settings.geminiModel,
                     "raw": raw,
                     "proposed": outcome.proposed ?? NSNull(),
                     "accepted": outcome.accepted,
@@ -284,16 +285,18 @@ final class AppController: ObservableObject {
         }
     }
 
-    // 設定が有効なら整形する（Ollama or DeepSeek）。無効・失敗時は生テキストを返す。
+    // 設定が有効なら整形する（Ollama / DeepSeek / Gemini）。無効・失敗時は生テキストを返す。
     private func refineIfEnabled(_ raw: String) async -> RefineOutcome {
         guard Settings.refineEnabled else {
             log("整形は無効。生の文字起こしを使用")
             return RefineOutcome(finalText: raw, proposed: nil, accepted: false, reason: "disabled")
         }
         transition(.refining)
-        // 同音異義語の判別を分野に寄せるため、Whisper 用の語彙ヒントを整形にも渡す。
-        let hint = Settings.initialPrompt
         let mode = Settings.refineMode
+        // 同音異義語の判別を分野に寄せるため、Whisper 用の語彙ヒントを整形にも渡す。
+        // ただし custom モードはユーザーが書いた system prompt をそのまま使う前提なので渡さない（プロンプトを汚さない）。
+        let hint = (mode == .custom) ? "" : Settings.initialPrompt
+        let customPrompt = Settings.refineCustomSystemPrompt
         let outcome: RefineOutcome
         switch Settings.refineProvider {
         case .deepseek:
@@ -302,14 +305,25 @@ final class AppController: ObservableObject {
                                         model: Settings.deepseekModel,
                                         baseURL: Settings.deepseekBaseURL,
                                         domainHint: hint,
-                                        mode: mode)
+                                        mode: mode,
+                                        customSystemPrompt: customPrompt)
+            outcome = await client.refine(raw)
+        case .gemini:
+            log("整形開始（Gemini: \(Settings.geminiModel) / \(mode.rawValue)）")
+            let client = GeminiClient(apiKey: Settings.geminiAPIKey,
+                                      model: Settings.geminiModel,
+                                      baseURL: Settings.geminiBaseURL,
+                                      domainHint: hint,
+                                      mode: mode,
+                                      customSystemPrompt: customPrompt)
             outcome = await client.refine(raw)
         case .ollama:
             log("整形開始（Ollama: \(Settings.ollamaModel) / \(mode.rawValue)）")
             let client = OllamaClient(baseURL: Settings.ollamaBaseURL,
                                       model: Settings.ollamaModel,
                                       domainHint: hint,
-                                      mode: mode)
+                                      mode: mode,
+                                      customSystemPrompt: customPrompt)
             outcome = await client.refine(raw)
         }
         if outcome.accepted { log("整形前: \(raw)") }

@@ -12,12 +12,16 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.ollamaBaseURL) private var ollamaBaseURL = "http://localhost:11434"
     @AppStorage(SettingsKey.deepseekModel) private var deepseekModel = "deepseek-chat"
     @AppStorage(SettingsKey.deepseekBaseURL) private var deepseekBaseURL = "https://api.deepseek.com"
+    @AppStorage(SettingsKey.geminiModel) private var geminiModel = "gemini-2.5-flash"
+    @AppStorage(SettingsKey.geminiBaseURL) private var geminiBaseURL = "https://generativelanguage.googleapis.com"
+    @AppStorage(SettingsKey.refineCustomSystemPrompt) private var refineCustomSystemPrompt = defaultCustomSystemPrompt
     @AppStorage(SettingsKey.hotkey) private var hotkey = HotkeyKind.rightOption.rawValue
     @AppStorage(SettingsKey.restoreClipboard) private var restoreClipboard = true
     @AppStorage(SettingsKey.initialPrompt) private var initialPrompt = defaultInitialPrompt
 
     // API キーは Keychain 保管（UserDefaults に置かない）。画面では State で扱い、変更時に Keychain へ書く。
     @State private var deepseekAPIKey = ""
+    @State private var geminiAPIKey = ""
 
     var body: some View {
         TabView {
@@ -26,7 +30,7 @@ struct SettingsView: View {
             generalTab.tabItem { Label("操作", systemImage: "keyboard") }
             permissionsTab.tabItem { Label("権限", systemImage: "lock.shield") }
         }
-        .frame(width: 460, height: 360)
+        .frame(width: 480, height: 480)
         .padding()
     }
 
@@ -73,28 +77,34 @@ struct SettingsView: View {
         .padding()
     }
 
-    // MARK: 整形（Ollama / DeepSeek）
+    // MARK: 整形（Ollama / DeepSeek / Gemini）
 
     private var refineTab: some View {
         Form {
             Toggle("漢字の取り違えだけ補正する（言い換えはしない）", isOn: $refineEnabled)
 
+            // プロバイダ・モードはともに 3 択になったので menu スタイルに統一（segmented は窮屈）。
             Picker("補正エンジン", selection: $refineProvider) {
                 Text("Ollama（ローカル・オフライン）").tag(RefineProvider.ollama.rawValue)
                 Text("DeepSeek（API・高精度）").tag(RefineProvider.deepseek.rawValue)
+                Text("Gemini（API・軽量低コスト）").tag(RefineProvider.gemini.rawValue)
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
             .disabled(!refineEnabled)
 
             Picker("補正の強さ", selection: $refineMode) {
                 Text("厳密（漢字のみ）").tag(RefineMode.strict.rawValue)
                 Text("自然化（カタカナ→英字）").tag(RefineMode.natural.rawValue)
+                Text("カスタム（自由プロンプト）").tag(RefineMode.custom.rawValue)
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
             .disabled(!refineEnabled)
 
             if refineMode == RefineMode.natural.rawValue {
                 Text("自然化: 「ディープシーク→DeepSeek」のように、確立した英語の固有名詞・製品名・略語をカタカナから英字表記に直します。言い換え・要約はしません（読みガードは外れ、長さガードで暴走を抑えます）。")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if refineMode == RefineMode.custom.rawValue {
+                Text("カスタム: 下のシステムプロンプトをそのまま LLM に渡します。few-shot・語彙ヒント・読みガード・長さガードは適用しません。「入力をそのまま返す」プロンプトを書けば校正なし運用にもできます。")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 Text("厳密: 同音異義語の漢字ミス（例: 保管→補完）だけを直します。読みが変わる修正は破棄します（最も安全）。")
@@ -103,14 +113,34 @@ struct SettingsView: View {
 
             Divider()
 
+            if refineMode == RefineMode.custom.rawValue {
+                Text("システムプロンプト（カスタムモード）").font(.subheadline)
+                TextEditor(text: $refineCustomSystemPrompt)
+                    .font(.system(size: 12))
+                    .frame(height: 90)
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.secondary.opacity(0.3)))
+                HStack {
+                    Spacer()
+                    Button("既定に戻す") { refineCustomSystemPrompt = defaultCustomSystemPrompt }
+                }
+                Text("例:「入力テキストをそのまま返してください。」と書けば、文字起こし結果をそのまま挿入します。「箇条書きに変換してください」のような自由な指示も可能です。")
+                    .font(.caption).foregroundStyle(.secondary)
+                Divider()
+            }
+
             if refineProvider == RefineProvider.deepseek.rawValue {
                 deepseekFields
+            } else if refineProvider == RefineProvider.gemini.rawValue {
+                geminiFields
             } else {
                 ollamaFields
             }
         }
         .padding()
-        .onAppear { deepseekAPIKey = Keychain.get(account: deepseekKeyAccount) ?? "" }
+        .onAppear {
+            deepseekAPIKey = Keychain.get(account: deepseekKeyAccount) ?? ""
+            geminiAPIKey   = Keychain.get(account: geminiKeyAccount) ?? ""
+        }
     }
 
     private var ollamaFields: some View {
@@ -143,6 +173,29 @@ struct SettingsView: View {
                   systemImage: "exclamationmark.triangle.fill")
                 .font(.caption).foregroundStyle(.orange)
             Text("API キーは macOS Keychain に保存します。キーは https://platform.deepseek.com で取得できます。")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("キー未設定・接続失敗のときは、補正せず文字起こし結果をそのまま使います。")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .disabled(!refineEnabled)
+    }
+
+    private var geminiFields: some View {
+        Group {
+            SecureField("Gemini API キー", text: $geminiAPIKey)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: geminiAPIKey) { _, new in
+                    Keychain.set(new.trimmingCharacters(in: .whitespacesAndNewlines),
+                                 account: geminiKeyAccount)
+                }
+            TextField("Gemini モデル名", text: $geminiModel)
+                .textFieldStyle(.roundedBorder)
+            TextField("Gemini API URL", text: $geminiBaseURL)
+                .textFieldStyle(.roundedBorder)
+            Label("Gemini 選択時は、文字起こしテキストが外部（Google サーバ）へ送信されます。完全オフラインではありません。",
+                  systemImage: "exclamationmark.triangle.fill")
+                .font(.caption).foregroundStyle(.orange)
+            Text("API キーは macOS Keychain に保存します。キーは https://aistudio.google.com/app/apikey で取得できます。\"gemini-2.5-flash\" は低コスト・高速モデルです。")
                 .font(.caption).foregroundStyle(.secondary)
             Text("キー未設定・接続失敗のときは、補正せず文字起こし結果をそのまま使います。")
                 .font(.caption).foregroundStyle(.secondary)

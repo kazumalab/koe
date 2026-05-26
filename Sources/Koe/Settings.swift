@@ -3,12 +3,15 @@ import Foundation
 // ユーザー設定（UserDefaults 永続化）。SwiftUI 側は @AppStorage で同じキーを束縛する。
 enum SettingsKey {
     static let refineEnabled  = "koe.refineEnabled"
-    static let refineProvider = "koe.refineProvider"   // "ollama"（ローカル） / "deepseek"（API）
-    static let refineMode     = "koe.refineMode"       // "strict"（漢字のみ） / "natural"（カタカナ→英字も）
+    static let refineProvider = "koe.refineProvider"   // "ollama" / "deepseek" / "gemini"
+    static let refineMode     = "koe.refineMode"       // "strict" / "natural" / "custom"
     static let ollamaModel    = "koe.ollamaModel"
     static let ollamaBaseURL  = "koe.ollamaBaseURL"
     static let deepseekModel  = "koe.deepseekModel"
     static let deepseekBaseURL = "koe.deepseekBaseURL"
+    static let geminiModel    = "koe.geminiModel"
+    static let geminiBaseURL  = "koe.geminiBaseURL"
+    static let refineCustomSystemPrompt = "koe.refineCustomSystemPrompt"
     static let whisperModel   = "koe.whisperModel"
     static let hotkey         = "koe.hotkey"
     static let restoreClipboard = "koe.restoreClipboard"
@@ -16,14 +19,20 @@ enum SettingsKey {
     static let initialPrompt  = "koe.initialPrompt"
 }
 
-// 整形バックエンド。ローカル(Ollama)か、クラウドAPI(DeepSeek)か。
+// 整形バックエンド。ローカル(Ollama)か、クラウドAPI(DeepSeek / Gemini)か。
 enum RefineProvider: String {
     case ollama
     case deepseek
+    case gemini
 }
 
-// Keychain 上の DeepSeek API キーのアカウント名。
+// Keychain 上の各 API キーのアカウント名。
 let deepseekKeyAccount = "deepseek-api-key"
+let geminiKeyAccount   = "gemini-api-key"
+
+// カスタムモードの既定システムプロンプト。
+// 「校正なし」を最も無難なデフォルトとしておく（プロンプト空のときも同じ文言で動かす）。
+let defaultCustomSystemPrompt = "入力テキストをそのまま返してください。"
 
 // Whisper の語彙ヒント（initial_prompt）の既定値。専門用語の認識精度を上げる“辞書”。
 // 設定の「認識」タブで自由に語を追加できる。
@@ -49,6 +58,9 @@ enum Settings {
             SettingsKey.ollamaBaseURL: "http://localhost:11434",
             SettingsKey.deepseekModel: "deepseek-chat",
             SettingsKey.deepseekBaseURL: "https://api.deepseek.com",
+            SettingsKey.geminiModel: "gemini-2.5-flash",
+            SettingsKey.geminiBaseURL: "https://generativelanguage.googleapis.com",
+            SettingsKey.refineCustomSystemPrompt: defaultCustomSystemPrompt,
             SettingsKey.whisperModel: WhisperModelKind.largeV3Turbo.rawValue,
             SettingsKey.hotkey: HotkeyKind.rightOption.rawValue,
             SettingsKey.restoreClipboard: true,
@@ -101,6 +113,33 @@ enum Settings {
             return env
         }
         return Keychain.get(account: deepseekKeyAccount) ?? ""
+    }
+
+    static var geminiModel: String { d.string(forKey: SettingsKey.geminiModel) ?? "gemini-2.5-flash" }
+
+    static var geminiBaseURL: URL {
+        // 環境変数による上書きを許可（テスト用）。
+        if let env = ProcessInfo.processInfo.environment["KOE_GEMINI_URL"], let u = URL(string: env) {
+            return u
+        }
+        let s = d.string(forKey: SettingsKey.geminiBaseURL) ?? "https://generativelanguage.googleapis.com"
+        return URL(string: s) ?? URL(string: "https://generativelanguage.googleapis.com")!
+    }
+
+    // API キーは Keychain 保管。環境変数 KOE_GEMINI_KEY による上書きを許可（テスト用）。
+    static var geminiAPIKey: String {
+        if let env = ProcessInfo.processInfo.environment["KOE_GEMINI_KEY"], !env.isEmpty {
+            return env
+        }
+        return Keychain.get(account: geminiKeyAccount) ?? ""
+    }
+
+    // カスタムモードのシステムプロンプト。環境変数 KOE_REFINE_CUSTOM_PROMPT で上書き可（テスト用）。
+    static var refineCustomSystemPrompt: String {
+        if let env = ProcessInfo.processInfo.environment["KOE_REFINE_CUSTOM_PROMPT"], !env.isEmpty {
+            return env
+        }
+        return d.string(forKey: SettingsKey.refineCustomSystemPrompt) ?? defaultCustomSystemPrompt
     }
 
     static var whisperModel: WhisperModelKind {

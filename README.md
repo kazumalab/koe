@@ -1,11 +1,11 @@
 # Koe — LLM補完つきオフライン音声入力（macOS）
 
-「Typeless」のような、どこでも使える音声入力ツール。グローバルなホットキーを押している間だけ録音し、離すと **ローカルの Whisper** で文字起こし、**LLM** で誤認識補正・整形を行い、整形済みテキストを **いま入力中のアプリのカーソル位置に自動挿入** します。整形バックエンドは **ローカルの Ollama（既定・完全オフライン）** か、**DeepSeek API（高精度・要 API キー）** から選べます。
+「Typeless」のような、どこでも使える音声入力ツール。グローバルなホットキーを押している間だけ録音し、離すと **ローカルの Whisper** で文字起こし、**LLM** で誤認識補正・整形を行い、整形済みテキストを **いま入力中のアプリのカーソル位置に自動挿入** します。整形バックエンドは **ローカルの Ollama（既定・完全オフライン）**、**DeepSeek API（高精度・要 API キー）**、**Gemini API（軽量低コスト・要 API キー）** から選べます。
 
-> 既定（Ollama）では音声・テキストを一切外部送信しません（完全オフライン。整形は Ollama 未導入時は自動でスキップ）。**DeepSeek を選んだ場合のみ、文字起こしテキストが DeepSeek サーバへ送信されます**（音声は送信しません）。
+> 既定（Ollama）では音声・テキストを一切外部送信しません（完全オフライン。整形は Ollama 未導入時は自動でスキップ）。**DeepSeek または Gemini を選んだ場合のみ、文字起こしテキストが外部 API へ送信されます**（音声は送信しません）。
 
 - 音声認識: whisper.cpp（v1.7.6 を静的リンク、Apple Silicon / Metal）
-- 整形（いずれか）: Ollama（`http://localhost:11434`、ローカル・既定）/ DeepSeek（`https://api.deepseek.com`、API・高精度）
+- 整形（いずれか）: Ollama（`http://localhost:11434`、ローカル・既定）/ DeepSeek（`https://api.deepseek.com`、API・高精度）/ Gemini（`https://generativelanguage.googleapis.com`、API・軽量低コスト）
 - 形態: メニューバー常駐 + push-to-talk（既定は右Option 長押し）
 
 ## 必要環境
@@ -39,13 +39,17 @@
 
    - **DeepSeek（API・高精度）**: 同音異義語の判別が高精度。[platform.deepseek.com](https://platform.deepseek.com) で API キーを取得し、「整形」タブの「DeepSeek」を選んでキーを入力（macOS Keychain に保存）。既定モデルは `deepseek-chat`。**文字起こしテキストが外部送信される**点に注意。
 
+   - **Gemini（API・軽量低コスト）**: [Google AI Studio](https://aistudio.google.com/app/apikey) で API キーを取得し、「整形」タブの「Gemini」を選んでキーを入力（macOS Keychain に保存）。既定モデルは `gemini-2.5-flash`。**文字起こしテキストが外部送信される**点に注意。
+
+4. 補正の強さは「厳密（漢字のみ）」「自然化（カタカナ→英字）」「カスタム（自由プロンプト）」から選べます。カスタムでは設定画面のシステムプロンプトをそのまま LLM に渡し、few-shot・語彙ヒント・読みガード・長さガードは適用しません。
+
 ## 使い方
 
-テキスト入力欄にカーソルを置き、**右Option を押しながら話して離す**。数秒後、整形済みテキストが挿入されます。設定（メニュー → 設定…）でモデル・ホットキー・整形ON/OFF・Ollama 接続先を変更できます。
+テキスト入力欄にカーソルを置き、**右Option を押しながら話して離す**。数秒後、整形済みテキストが挿入されます。設定（メニュー → 設定…）でモデル・ホットキー・整形ON/OFF・補正エンジン・API 接続先を変更できます。
 
 ## 動作の仕組み
 
-`HotkeyManager`(CGEvent) → `AudioRecorder`(16kHz/mono) → `WhisperTranscriber`(whisper.cpp) → `OllamaClient`(/api/chat) → `TextInjector`(クリップボード＋⌘V)。詳細と設計判断は [`plans/2026-05-25-voice-input-mac-app/ExecPlan.md`](plans/2026-05-25-voice-input-mac-app/ExecPlan.md) を参照。
+`HotkeyManager`(CGEvent) → `AudioRecorder`(16kHz/mono) → `WhisperTranscriber`(whisper.cpp) → `OllamaClient`/`DeepSeekClient`/`GeminiClient` → `TextInjector`(クリップボード＋⌘V)。詳細と設計判断は [`plans/2026-05-25-voice-input-mac-app/ExecPlan.md`](plans/2026-05-25-voice-input-mac-app/ExecPlan.md) を参照。
 
 ## 自己テスト（headless）
 
