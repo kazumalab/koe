@@ -11,6 +11,7 @@ enum SettingsKey {
     static let deepseekBaseURL = "koe.deepseekBaseURL"
     static let whisperModel   = "koe.whisperModel"
     static let hotkey         = "koe.hotkey"
+    static let recordMode     = "koe.recordMode"       // "pushToTalk"（長押し） / "toggle"（1回で開始・もう1回で停止）
     static let restoreClipboard = "koe.restoreClipboard"
     static let language       = "koe.language"
     static let initialPrompt  = "koe.initialPrompt"
@@ -20,6 +21,22 @@ enum SettingsKey {
 enum RefineProvider: String {
     case ollama
     case deepseek
+}
+
+// 録音の操作方式。
+// pushToTalk: ホットキーを押している間だけ録音し、離した時点で文字起こしする（既定）。
+// toggle:     ホットキーを1回押すと録音開始、もう1回押すと停止し、その時点で文字起こしする。
+enum RecordMode: String, CaseIterable, Identifiable {
+    case pushToTalk
+    case toggle
+
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .pushToTalk: return "長押し（押している間だけ録音）"
+        case .toggle:     return "トグル（1回で開始・もう1回で停止）"
+        }
+    }
 }
 
 // Keychain 上の DeepSeek API キーのアカウント名。
@@ -51,6 +68,7 @@ enum Settings {
             SettingsKey.deepseekBaseURL: "https://api.deepseek.com",
             SettingsKey.whisperModel: WhisperModelKind.largeV3Turbo.rawValue,
             SettingsKey.hotkey: HotkeyKind.rightOption.rawValue,
+            SettingsKey.recordMode: RecordMode.pushToTalk.rawValue,
             SettingsKey.restoreClipboard: true,
             SettingsKey.language: "ja",
             SettingsKey.initialPrompt: defaultInitialPrompt
@@ -123,6 +141,10 @@ enum Settings {
 
     static var hotkey: HotkeyKind {
         HotkeyKind(rawValue: d.string(forKey: SettingsKey.hotkey) ?? "") ?? .rightOption
+    }
+
+    static var recordMode: RecordMode {
+        RecordMode(rawValue: d.string(forKey: SettingsKey.recordMode) ?? "") ?? .pushToTalk
     }
 
     static var restoreClipboard: Bool { d.bool(forKey: SettingsKey.restoreClipboard) }

@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.deepseekModel) private var deepseekModel = "deepseek-chat"
     @AppStorage(SettingsKey.deepseekBaseURL) private var deepseekBaseURL = "https://api.deepseek.com"
     @AppStorage(SettingsKey.hotkey) private var hotkey = HotkeyKind.rightOption.rawValue
+    @AppStorage(SettingsKey.recordMode) private var recordMode = RecordMode.pushToTalk.rawValue
     @AppStorage(SettingsKey.restoreClipboard) private var restoreClipboard = true
     @AppStorage(SettingsKey.initialPrompt) private var initialPrompt = defaultInitialPrompt
 
@@ -154,7 +155,7 @@ struct SettingsView: View {
 
     private var generalTab: some View {
         Form {
-            Picker("録音ホットキー（押している間だけ録音）", selection: $hotkey) {
+            Picker("録音ホットキー", selection: $hotkey) {
                 ForEach(HotkeyKind.allCases) { k in
                     Text(k.displayName).tag(k.rawValue)
                 }
@@ -162,8 +163,24 @@ struct SettingsView: View {
             .onChange(of: hotkey) { _, _ in
                 controller.reloadHotkey()
             }
+
+            Picker("録音方式", selection: $recordMode) {
+                ForEach(RecordMode.allCases) { m in
+                    Text(m.displayName).tag(m.rawValue)
+                }
+            }
+            if recordMode == RecordMode.toggle.rawValue {
+                Text("ホットキーを1回押すと録音開始、もう1回押すと停止して文字起こしします。")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("ホットキーを押している間に話し、離すと文字起こしします。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Divider()
+
             Toggle("貼り付け後にクリップボードを復元する", isOn: $restoreClipboard)
-            Text("ホットキーを押している間に話し、離すと整形済みテキストが現在の入力欄に挿入されます。")
+            Text("整形済みテキストは現在の入力欄に自動で挿入されます。")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding()
