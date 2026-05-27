@@ -201,6 +201,14 @@ final class AppController: ObservableObject {
         guard samples.count > 1600 else {   // 0.1 秒未満は無視
             log("音声が短すぎます。スキップします"); transition(.idle); return
         }
+        // 無音・極小音量は Whisper が定型句（「ご視聴ありがとうございました」等）を
+        // 幻覚しやすい。実発話とみなせる音量に満たなければ文字起こしをせず、何も入力しない。
+        guard rms >= Settings.minSpeechRMS else {
+            log(String(format: "音量が小さすぎます (rms=%.4f < %.4f)。文字起こしをスキップします",
+                       rms, Settings.minSpeechRMS))
+            showErrorBriefly("声が小さすぎます")
+            return
+        }
         process(samples: samples, peak: peak, rms: rms, seconds: seconds)
     }
 

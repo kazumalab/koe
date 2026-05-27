@@ -107,6 +107,16 @@ enum Settings {
         WhisperModelKind(rawValue: d.string(forKey: SettingsKey.whisperModel) ?? "") ?? .largeV3Turbo
     }
 
+    // 実発話とみなす最小 RMS（音量）。これ未満の入力は無音・極小音量とみなし、
+    // 文字起こし自体を行わない。無音時に Whisper が「ご視聴ありがとうございました」等の
+    // 定型句を幻覚（学習データ由来の作文）する問題への対策。
+    // 閾値は実ログ分析に基づく（正常発話の rms 下限 ≈ 0.004、幻覚は rms ≤ 0.003）。
+    // 環境変数 KOE_MIN_RMS で上書き可能（マイクのゲインや環境ノイズに応じて調整）。
+    static var minSpeechRMS: Float {
+        if let s = ProcessInfo.processInfo.environment["KOE_MIN_RMS"], let v = Float(s) { return v }
+        return 0.0035
+    }
+
     static var initialPrompt: String {
         d.string(forKey: SettingsKey.initialPrompt) ?? defaultInitialPrompt
     }
