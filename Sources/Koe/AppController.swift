@@ -83,10 +83,10 @@ final class AppController: ObservableObject {
         // 3) ホットキー配線（設定のキー種別を反映）
         hotkey.updateKind(Settings.hotkey)
         hotkey.onPressStart = { [weak self] in
-            MainActor.assumeIsolated { self?.beginRecording() }
+            MainActor.assumeIsolated { self?.handlePressStart() }
         }
         hotkey.onPressEnd = { [weak self] in
-            MainActor.assumeIsolated { self?.endRecording() }
+            MainActor.assumeIsolated { self?.handlePressEnd() }
         }
         if !hotkey.startMonitoring() {
             log("ホットキーを開始できませんでした。システム設定 > プライバシー > 入力監視 で Koe を許可後、再起動してください")
@@ -167,6 +167,29 @@ final class AppController: ObservableObject {
     }
 
     // MARK: 録音 → 文字起こしフロー
+
+    // ホットキー押下（down）。録音方式に応じて挙動を変える。
+    private func handlePressStart() {
+        switch Settings.recordMode {
+        case .pushToTalk: beginRecording()   // 押している間だけ録音
+        case .toggle:     toggleRecording()  // 1回押して開始、もう1回押して停止
+        }
+    }
+
+    // ホットキー解放（up）。長押し方式のときだけ録音を止める。
+    // トグル方式では解放を無視し、停止は次の押下で行う。
+    private func handlePressEnd() {
+        if Settings.recordMode == .pushToTalk { endRecording() }
+    }
+
+    // トグル方式: 待機中なら録音開始、録音中なら停止して文字起こしへ進む。
+    private func toggleRecording() {
+        switch state {
+        case .idle:      beginRecording()
+        case .recording: endRecording()
+        default:         break   // 文字起こし・整形中は無視
+        }
+    }
 
     private func beginRecording() {
         guard state == .idle else { return }
