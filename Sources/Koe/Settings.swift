@@ -15,6 +15,7 @@ enum SettingsKey {
     static let restoreClipboard = "koe.restoreClipboard"
     static let language       = "koe.language"
     static let initialPrompt  = "koe.initialPrompt"
+    static let useSurroundingContext = "koe.useSurroundingContext"  // フォーカス中の入力欄の前後テキストを補正ヒントに使う
 }
 
 // 整形バックエンド。ローカル(Ollama)か、クラウドAPI(DeepSeek)か。
@@ -71,7 +72,8 @@ enum Settings {
             SettingsKey.recordMode: RecordMode.pushToTalk.rawValue,
             SettingsKey.restoreClipboard: true,
             SettingsKey.language: "ja",
-            SettingsKey.initialPrompt: defaultInitialPrompt
+            SettingsKey.initialPrompt: defaultInitialPrompt,
+            SettingsKey.useSurroundingContext: true   // 既定で有効（前後テキストを参考に補正）
         ])
     }
 
@@ -146,6 +148,10 @@ enum Settings {
     static var recordMode: RecordMode {
         RecordMode(rawValue: d.string(forKey: SettingsKey.recordMode) ?? "") ?? .pushToTalk
     }
+
+    // フォーカス中の入力欄の前後にある既存テキストを補正のヒントに使うか。
+    // 取得はアクセシビリティ権限経由（既に貼り付けに使っているのと同じ権限）。
+    static var useSurroundingContext: Bool { d.bool(forKey: SettingsKey.useSurroundingContext) }
 
     static var restoreClipboard: Bool { d.bool(forKey: SettingsKey.restoreClipboard) }
     static var language: String { d.string(forKey: SettingsKey.language) ?? "ja" }

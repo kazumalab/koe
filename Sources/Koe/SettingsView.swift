@@ -16,6 +16,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.recordMode) private var recordMode = RecordMode.pushToTalk.rawValue
     @AppStorage(SettingsKey.restoreClipboard) private var restoreClipboard = true
     @AppStorage(SettingsKey.initialPrompt) private var initialPrompt = defaultInitialPrompt
+    @AppStorage(SettingsKey.useSurroundingContext) private var useSurroundingContext = true
 
     // API キーは Keychain 保管（UserDefaults に置かない）。画面では State で扱い、変更時に Keychain へ書く。
     @State private var deepseekAPIKey = ""
@@ -101,6 +102,10 @@ struct SettingsView: View {
                 Text("厳密: 同音異義語の漢字ミス（例: 保管→補完）だけを直します。読みが変わる修正は破棄します（最も安全）。")
                     .font(.caption).foregroundStyle(.secondary)
             }
+
+            Toggle("前後の文字を参考にして補正する", isOn: $useSurroundingContext)
+            Text("フォーカス中の入力欄の前後テキストをアクセシビリティ経由で読み取り、文字起こしと整形の判断材料に使います。DeepSeek 選択時は前後テキストも DeepSeek サーバへ送信されます。")
+                .font(.caption).foregroundStyle(.secondary)
 
             Divider()
 
