@@ -8,6 +8,8 @@ struct DeepSeekClient {
     let model: String                       // 例: "deepseek-chat"
     var baseURL: URL = URL(string: "https://api.deepseek.com")!
     var domainHint: String = ""             // 同音異義語の判別を寄せる文脈ヒント
+    var contextPrefix: String = ""          // 入力欄でカーソル直前にある既存テキスト
+    var contextSuffix: String = ""          // 入力欄でカーソル直後にある既存テキスト
     var mode: RefineMode = .strict          // 整形の強さ（strict=漢字のみ / natural=カタカナ→英字も）
     var timeout: TimeInterval = 30
     var temperature: Double = 0             // 0 で最も決定的（余計な書き換えを抑える）
@@ -29,7 +31,11 @@ struct DeepSeekClient {
             req.timeoutInterval = timeout
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            let messages = RefineCore.buildMessages(userText: trimmed, domainHint: domainHint, mode: mode)
+            let messages = RefineCore.buildMessages(userText: trimmed,
+                                                    domainHint: domainHint,
+                                                    contextPrefix: contextPrefix,
+                                                    contextSuffix: contextSuffix,
+                                                    mode: mode)
                 .map { ChatRequest.Message(role: $0.role, content: $0.content) }
             req.httpBody = try JSONEncoder().encode(ChatRequest(
                 model: model,

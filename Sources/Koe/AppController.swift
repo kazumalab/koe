@@ -266,17 +266,29 @@ final class AppController: ObservableObject {
     // 文字起こし → LLM 整形 → 挿入 →（検証用に JSONL ログ記録）
     private func process(samples: [Float], peak: Float, rms: Float, seconds: Double) {
         guard let t = transcriberIfReady() else { transition(.idle); return }
+        // フォーカス中の入力欄の前後テキストを取り、補正の文脈として使う。
+        // 取得は録音直後（Koe はフォーカスを奪わないメニューバーアプリ）に行うのが最も正確。
+        let ctx = Settings.useSurroundingContext ? ContextReader.read() : nil
+        if let c = ctx {
+            log("前後の文脈を取得: 直前=\(c.prefix.count)字 / 直後=\(c.suffix.count)字")
+        }
+        // Whisper の initial_prompt に短い「直前の文脈」を足す（語彙ヒントは維持）。
+        // プロンプト長の上限があるため prefix の末尾 60 字程度に絞る。
+        var initialPrompt = Settings.initialPrompt
+        if let head = ctx.map({ String($0.prefix.suffix(60)) }), !head.isEmpty {
+            initialPrompt += "\n直前の文脈: " + head
+        }
         transition(.transcribing)
-        Task { [weak self] in
+        Task { [weak self, initialPrompt, ctx] in
             guard let self else { return }
             do {
                 let raw = try await t.transcribe(samples: samples,
                                                  language: Settings.language,
-                                                 initialPrompt: Settings.initialPrompt)
+                                                 initialPrompt: initialPrompt)
                 log("文字起こし: \(raw)")
                 guard !raw.isEmpty else { self.transition(.idle); return }
 
-                let outcome = await self.refineIfEnabled(raw)
+                let outcome = await self.refineIfEnabled(raw, context: ctx)
                 let finalText = outcome.finalText
                 log("最終テキスト: \(finalText)")
                 self.lastResult = finalText
@@ -299,6 +311,9 @@ final class AppController: ObservableObject {
                     "refineMode": Settings.refineMode.rawValue,
                     "ollamaModel": Settings.ollamaModel,
                     "deepseekModel": Settings.deepseekModel,
+                    "useContext": Settings.useSurroundingContext,
+                    "ctxPrefixLen": ctx?.prefix.count ?? 0,
+                    "ctxSuffixLen": ctx?.suffix.count ?? 0,
                     "raw": raw,
                     "proposed": outcome.proposed ?? NSNull(),
                     "accepted": outcome.accepted,
@@ -316,7 +331,8 @@ final class AppController: ObservableObject {
     }
 
     // 設定が有効なら整形する（Ollama or DeepSeek）。無効・失敗時は生テキストを返す。
-    private func refineIfEnabled(_ raw: String) async -> RefineOutcome {
+    // context が与えられると、入力欄の前後テキストを補正のヒストとして LLM に渡す。
+    private func refineIfEnabled(_ raw: String, context: SurroundingContext?) async -> RefineOutcome {
         guard Settings.refineEnabled else {
             log("整形は無効。生の文字起こしを使用")
             return RefineOutcome(finalText: raw, proposed: nil, accepted: false, reason: "disabled")
@@ -325,6 +341,8 @@ final class AppController: ObservableObject {
         // 同音異義語の判別を分野に寄せるため、Whisper 用の語彙ヒントを整形にも渡す。
         let hint = Settings.initialPrompt
         let mode = Settings.refineMode
+        let cprefix = context?.prefix ?? ""
+        let csuffix = context?.suffix ?? ""
         let outcome: RefineOutcome
         switch Settings.refineProvider {
         case .deepseek:
@@ -333,6 +351,8 @@ final class AppController: ObservableObject {
                                         model: Settings.deepseekModel,
                                         baseURL: Settings.deepseekBaseURL,
                                         domainHint: hint,
+                                        contextPrefix: cprefix,
+                                        contextSuffix: csuffix,
                                         mode: mode)
             outcome = await client.refine(raw)
         case .ollama:
@@ -340,6 +360,8 @@ final class AppController: ObservableObject {
             let client = OllamaClient(baseURL: Settings.ollamaBaseURL,
                                       model: Settings.ollamaModel,
                                       domainHint: hint,
+                                      contextPrefix: cprefix,
+                                      contextSuffix: csuffix,
                                       mode: mode)
             outcome = await client.refine(raw)
         }
@@ -410,7 +432,7 @@ final class AppController: ObservableObject {
                                                  language: Settings.language,
                                                  initialPrompt: Settings.initialPrompt)
                 log("文字起こし結果: \(raw)")
-                let finalText = await self.refineIfEnabled(raw).finalText
+                let finalText = await self.refineIfEnabled(raw, context: nil).finalText
                 log("最終テキスト: \(finalText)")
                 self.lastResult = finalText
             } catch {
